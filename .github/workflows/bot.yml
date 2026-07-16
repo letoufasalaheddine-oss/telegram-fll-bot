@@ -1,42 +1,47 @@
-name: FLL Monitor
+name: Monitor
 
 on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install requirements
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Restore last post
-        uses: actions/cache@v4
-        with:
-          path: last_post.txt
-          key: fll-last-post
 
       - name: Run bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+          CHANNELS: ${{ secrets.CHANNELS }}
         run: python main.py
 
-      - name: Save cache
-        uses: actions/cache/save@v4
-        with:
-          path: last_post.txt
-          key: fll-last-post-${{ github.run_id }}
+      - name: Commit last_post.txt
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add last_post.txt
+
+          git diff --cached --quiet || git commit -m "Update last post"
+
+          git push
