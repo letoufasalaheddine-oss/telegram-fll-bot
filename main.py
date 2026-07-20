@@ -10,7 +10,23 @@ CHAT_ID = os.getenv("CHAT_ID")
 LAST_FILE = "last_post.txt"
 
 
-def get_latest_post():
+def read_last():
+    if not os.path.exists(LAST_FILE):
+        return ""
+
+    with open(LAST_FILE, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
+
+def save_last(link):
+    with open(LAST_FILE, "r+", encoding="utf-8") as f:
+        f.seek(0)
+        f.write(link)
+        f.truncate()
+
+
+def get_new_posts():
+
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
@@ -24,6 +40,10 @@ def get_latest_post():
     r.raise_for_status()
 
     soup = BeautifulSoup(r.text, "html.parser")
+
+    last = read_last()
+
+    posts = []
 
     for a in soup.find_all("a", href=True):
 
@@ -40,33 +60,34 @@ def get_latest_post():
         if href.startswith("/"):
             href = "https://faculty.univ-eloued.dz" + href
 
-        print("Found:", title)
-        print("URL:", href)
+        # توقف عند آخر إعلان منشور
+        if href == last:
+            break
 
-        return title, href
-
-    print("No announcement found")
-    return None, None
+        posts.append((title, href))
 
 
-def read_last():
-    if not os.path.exists(LAST_FILE):
-        return ""
+    # حذف التكرار
+    unique_posts = []
+    seen = set()
 
-    with open(LAST_FILE, "r", encoding="utf-8") as f:
-        return f.read().strip()
+    for post in posts:
+        if post[1] not in seen:
+            unique_posts.append(post)
+            seen.add(post[1])
 
 
-def save_last(link):
-    with open(LAST_FILE, "w", encoding="utf-8") as f:
-        f.write(link)
+    # من الأقدم إلى الأحدث
+    unique_posts.reverse()
+
+    return unique_posts
 
 
 def send_telegram(title, link):
 
     text = f"""📢 إعلان جديد
 
-{title}
+📝 {title}
 
 🔗 {link}
 """
@@ -75,13 +96,13 @@ def send_telegram(title, link):
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         data={
             "chat_id": CHAT_ID,
-            "text": text
+            "text": text,
+            "disable_web_page_preview": False
         },
         timeout=30
     )
 
-    print("Telegram status:", response.status_code)
-    print(response.text)
+    response.raise_for_status()
 
 
 def main():
@@ -96,26 +117,23 @@ def main():
         print("ERROR: CHAT_ID missing")
         return
 
-    title, link = get_latest_post()
 
-    if not link:
-        print("No announcement found")
+    posts = get_new_posts()
+
+    if not posts:
+        print("No new announcements")
         return
 
-    print("Title:", title)
-    print("Link:", link)
 
-    last = read_last()
+    for title, link in posts:
+        print("Sending:", title)
+        send_telegram(title, link)
 
-    if link == last:
-        print("No new announcement")
-        return
 
-    send_telegram(title, link)
+    # حفظ آخر إعلان
+    save_last(posts[-1][1])
 
-    save_last(link)
-
-    print("Announcement sent")
+    print(f"Sent {len(posts)} announcement(s)")
 
 
 if __name__ == "__main__":
